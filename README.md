@@ -54,9 +54,11 @@ A high-performance, interactive art engine inspired by the **De Stijl** movement
 
 ## 📝 Examples
 
-Add links here! 
+![Example image 1](Examples/1.png)
 
+![Example image 2](Examples/2.png)
 
+![Example image 3](Examples/3.png)
 ---
 
 ## 📜 License
