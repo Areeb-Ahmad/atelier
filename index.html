@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mondrian Studio | Ratio + Crop</title>
+    <title>Mondrian Studio | Batch Edition</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -11,23 +11,29 @@
     
     <style>
         :root {
-            --m-red: #E61919; --m-blue: #0055AA; --m-yellow: #c9b458;
+            --m-red: #E61919; --m-blue: #0055AA; --m-yellow: #FFD200;
             --m-black: #111111; --m-white: #FFFFFF;
         }
 
-        body { background: #000; color: white; font-family: font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;, sans-serif; margin: 0; }
-        .navbar { background: #000; border-bottom: 1px solid #222; padding: 15px 0; }
+        body { 
+            background: #000; color: white; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0; overflow-x: hidden;
+        }
+
+        .navbar { background: #000; border-bottom: 1px solid #222; padding: 1.2rem 0; }
 
         #collage-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            grid-auto-rows: 140px;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            grid-auto-rows: 160px;
             grid-auto-flow: dense;
             gap: 12px; 
             background: var(--m-black);
             padding: 12px;
             border: 12px solid var(--m-black);
             min-height: 80vh;
+            margin-bottom: 50px;
         }
 
         .grid-item-wrapper {
@@ -35,20 +41,20 @@
             background: var(--m-white);
             overflow: hidden;
             display: flex;
-            transition: all 0.3s ease;
+            align-items: center; justify-content: center;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer; padding: 15px; text-align: center;
         }
 
-        .grid-item {
-            width: 100%; height: 100%; 
-            object-fit: cover; /* Toggles between cover and contain via JS if needed */
-        }
+        .grid-item { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+        .grid-text { color: #000; font-weight: 800; text-transform: uppercase; line-height: 1.1; word-wrap: break-word; margin: 0; width: 100%; }
 
-        /* Mondrian Colors */
         .block-red { background: var(--m-red); }
+        .block-red .grid-text { color: white; }
         .block-blue { background: var(--m-blue); }
+        .block-blue .grid-text { color: white; }
         .block-yellow { background: var(--m-yellow); }
         
-        /* Ratio Spans */
         .span-wide { grid-column: span 2; }
         .span-tall { grid-row: span 2; }
         .span-large { grid-column: span 2; grid-row: span 2; }
@@ -58,152 +64,190 @@
             font-size: 10px; letter-spacing: 2px; padding: 8px 16px;
             text-transform: uppercase; transition: 0.2s;
         }
-        .btn-ui.active { background: white; color: black; border-color: white; }
-        .btn-ui:hover:not(.active) { border-color: #888; }
+        .btn-ui:hover { background: white; color: black; border-color: white; }
 
         .btn-remove {
-            position: absolute; top: 0; right: 0; padding: 5px 10px;
-            background: var(--m-black); color: white; border: none; font-size: 10px;
-            display: none; cursor: pointer; z-index: 10;
+            position: absolute; top: 0; right: 0; padding: 6px 10px;
+            background: black; color: white; border: none; font-size: 10px;
+            display: none; cursor: pointer; z-index: 20;
         }
         .grid-item-wrapper:hover .btn-remove { display: block; }
+
+        /* Modal / Overlay */
+        .m-modal {
+            display: none; position: fixed; z-index: 1000; left: 0; top: 0;
+            width: 100%; height: 100%; background: rgba(0,0,0,0.9);
+            align-items: center; justify-content: center;
+        }
+        .m-modal-content {
+            background: var(--m-white); color: #000; padding: 40px;
+            width: 90%; max-width: 500px; border: 10px solid var(--m-black);
+        }
+
+        .control-panel { max-width: 800px; margin: 30px auto; }
+        .form-control { background: #111; border: 1px solid #333; color: white; border-radius: 0; }
+        .form-control:focus { background: #181818; border-color: var(--m-blue); box-shadow: none; color: white; }
     </style>
 </head>
 <body>
 
 <nav class="navbar sticky-top">
     <div class="container d-flex justify-content-between align-items-center">
-        <div class="d-flex align-items-center gap-4">
-            <span style="font-weight: 900; letter-spacing: 2px;">STUDIO</span>
-            <div class="btn-group">
-                <button class="btn-ui active" id="mode-natural" onclick="setMode('natural')">Natural Ratio</button>
-                <button class="btn-ui" id="mode-crop" onclick="setMode('crop')">Strict Crop</button>
-            </div>
-        </div>
+        <span style="font-weight: 900; letter-spacing: 4px;">STUDIO</span>
         <div class="d-flex gap-2">
+            <button class="btn-ui" onclick="document.getElementById('upload-modal').style.display='flex'">Batch Upload</button>
             <button class="btn-ui" style="border-color: var(--m-red);" onclick="clearGrid()">Reset</button>
-            <button class="btn-ui" style="background: white; color: black;" onclick="exportImage()">Export</button>
+            <button class="btn-ui" style="background: white; color: black;" onclick="exportImage()">Export PNG</button>
         </div>
     </div>
 </nav>
 
-<div class="container mt-4">
-    <div class="row mb-4">
-        <div class="col-md-8 mx-auto">
-            <div class="input-group shadow-lg">
-                <input type="text" class="form-control bg-dark border-0 text-white" id="search-query" placeholder="Image URL or Search Term...">
-                <button class="btn btn-light px-4 fw-bold" onclick="handleAdd()">ADD ITEM</button>
-            </div>
+<div class="container control-panel">
+    <div class="input-group shadow-lg">
+        <input type="text" class="form-control" id="smart-input" placeholder="Paste link OR type text...">
+        <button class="btn btn-light px-4 fw-bold" onclick="handleInput()">ADD</button>
+    </div>
+</div>
+
+<div id="capture-area">
+    <div id="collage-grid"></div>
+</div>
+
+<div id="upload-modal" class="m-modal">
+    <div class="m-modal-content">
+        <h2 style="font-weight: 900; text-transform: uppercase;">Batch Import</h2>
+        <hr style="border-top: 5px solid black; opacity: 1;">
+        <p style="font-size: 13px;"><strong>Format Instructions:</strong></p>
+        <ul style="font-size: 12px; padding-left: 20px;">
+            <li>Create a <code>.txt</code> file.</li>
+            <li>Paste one image URL per line.</li>
+            <li>Direct links (ending in .jpg, .png, etc.) work best.</li>
+            <li>Empty lines will be ignored.</li>
+        </ul>
+        <input type="file" id="file-input" accept=".txt" class="form-control mb-3" style="background: #eee; color: #000; border: 2px solid #000;">
+        <div class="d-flex gap-2">
+            <button class="btn btn-dark flex-grow-1 rounded-0 fw-bold" onclick="processFile()">PROCESS FILE</button>
+            <button class="btn btn-outline-dark rounded-0" onclick="document.getElementById('upload-modal').style.display='none'">CANCEL</button>
         </div>
     </div>
-    <div id="capture-area"><div id="collage-grid"></div></div>
 </div>
 
 <script>
     const grid = document.getElementById('collage-grid');
-    let currentMode = 'natural'; // 'natural' or 'crop'
+    const spanCycle = ['', 'span-wide', 'span-tall', 'span-large'];
+    const colors = ['block-red', 'block-blue', 'block-yellow'];
 
-    function setMode(mode) {
-        currentMode = mode;
-        document.getElementById('mode-natural').classList.toggle('active', mode === 'natural');
-        document.getElementById('mode-crop').classList.toggle('active', mode === 'crop');
+    function handleInput() {
+        const val = document.getElementById('smart-input').value.trim();
+        if (!val) return;
+        processItem(val);
+        document.getElementById('smart-input').value = '';
     }
 
-    async function handleAdd() {
-        const query = document.getElementById('search-query').value.trim();
-        if (!query) return;
-
-        let url = query;
-        if (!query.startsWith('http')) {
-            try {
-                const res = await fetch(`/api/fetch-image/?type=artist&name=${encodeURIComponent(query)}`);
-                const data = await res.json();
-                url = data.url;
-            } catch (e) { alert("Fetch failed."); return; }
-        }
-
-        if (url) {
+    // New shared logic for single and batch items
+    function processItem(val) {
+        if (val.startsWith('http')) {
             const img = new Image();
             img.crossOrigin = "anonymous";
-            img.src = url;
+            img.src = val;
             img.onload = () => {
                 const ratio = img.width / img.height;
-                let span = '';
-
-                if (currentMode === 'natural') {
-                    if (ratio > 1.3) span = 'span-wide';
-                    else if (ratio < 0.8) span = 'span-tall';
-                } else {
-                    // In strict crop, we randomly assign large squares for variety, but keep ratios 1:1
-                    if (Math.random() > 0.7) span = 'span-large';
-                }
-
-                createTile(url, span);
-                autoBalance();
-                document.getElementById('search-query').value = '';
+                let span = ratio > 1.2 ? 'span-wide' : (ratio < 0.8 ? 'span-tall' : '');
+                createTile(val, span, null, null);
+                save();
             };
+            img.onerror = () => {
+                addTextTile(val);
+                save();
+            };
+        } else {
+            addTextTile(val);
+            save();
         }
     }
 
-    function createTile(url, spanClass, colorClass = null) {
-        const wrapper = document.createElement('div');
-        wrapper.className = `grid-item-wrapper ${spanClass || ''} ${colorClass || ''}`;
-        
-        if (url) {
-            const imgEl = document.createElement('img');
-            imgEl.src = url;
-            imgEl.className = 'grid-item';
-            wrapper.appendChild(imgEl);
-        }
+    function processFile() {
+        const fileInput = document.getElementById('file-input');
+        const file = fileInput.files[0];
+        if (!file) return alert("Select a file first.");
 
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const lines = e.target.result.split(/\r?\n/);
+            lines.forEach(line => {
+                if (line.trim()) processItem(line.trim());
+            });
+            document.getElementById('upload-modal').style.display = 'none';
+            fileInput.value = ''; // Reset input
+        };
+        reader.readAsText(file);
+    }
+
+    function addTextTile(text) {
+        let span = text.length > 80 ? 'span-large' : (text.length > 30 ? 'span-wide' : '');
+        const color = Math.random() > 0.4 ? colors[Math.floor(Math.random() * colors.length)] : null;
+        createTile(null, span, color, text);
+    }
+
+    function createTile(url, span, color, text) {
+        const wrapper = document.createElement('div');
+        wrapper.className = `grid-item-wrapper ${span} ${color || ''}`;
+        if (url) {
+            const img = document.createElement('img');
+            img.src = url; img.className = 'grid-item';
+            wrapper.appendChild(img);
+        } else if (text) {
+            const p = document.createElement('p');
+            p.className = 'grid-text';
+            p.innerText = text;
+            p.style.fontSize = text.length > 60 ? '0.8rem' : (text.length > 20 ? '1.1rem' : '1.4rem');
+            wrapper.appendChild(p);
+        }
+        wrapper.onclick = (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            let current = spanCycle.find(s => s && wrapper.classList.contains(s)) || '';
+            let next = (spanCycle.indexOf(current) + 1) % spanCycle.length;
+            spanCycle.forEach(s => { if(s) wrapper.classList.remove(s) });
+            if (spanCycle[next]) wrapper.classList.add(spanCycle[next]);
+            save();
+        };
         const rm = document.createElement('button');
-        rm.innerText = "REMOVE"; rm.className = "btn-remove";
-        rm.onclick = () => { wrapper.remove(); save(); };
-        
+        rm.innerText = "✕"; rm.className = "btn-remove";
+        rm.onclick = (e) => { e.stopPropagation(); wrapper.remove(); save(); };
         wrapper.appendChild(rm);
         grid.appendChild(wrapper);
-        save();
-    }
-
-    function autoBalance() {
-        const colors = ['block-red', 'block-blue', 'block-yellow'];
-        const randomColor = colors[Math.floor(Math.random() * colors.length)];
-        // Add a 1x1 color block to balance the photography
-        createTile(null, '', randomColor);
     }
 
     function save() {
         const data = Array.from(grid.querySelectorAll('.grid-item-wrapper')).map(w => ({
             url: w.querySelector('img')?.src || null,
+            text: w.querySelector('.grid-text')?.innerText || null,
             span: Array.from(w.classList).find(c => c.startsWith('span-')) || '',
             color: Array.from(w.classList).find(c => c.startsWith('block-')) || ''
         }));
-        localStorage.setItem('mondrian_final', JSON.stringify(data));
+        localStorage.setItem('mondrian_batch_v1', JSON.stringify(data));
     }
 
     function clearGrid() {
-        if(confirm("Reset canvas?")) {
-            grid.innerHTML = '';
-            localStorage.removeItem('mondrian_final');
-        }
+        if(confirm("Wipe canvas?")) { grid.innerHTML = ''; localStorage.removeItem('mondrian_batch_v1'); }
     }
 
     function exportImage() {
-        const buttons = document.querySelectorAll('.btn-remove');
-        buttons.forEach(b => b.style.display = 'none');
+        const btns = document.querySelectorAll('.btn-remove');
+        btns.forEach(b => b.style.display = 'none');
         html2canvas(grid, { useCORS: true, scale: 2, backgroundColor: '#111' }).then(canvas => {
             const a = document.createElement('a');
             a.download = `composition-${Date.now()}.png`;
             a.href = canvas.toDataURL();
             a.click();
-            buttons.forEach(b => b.style.removeProperty('display'));
+            btns.forEach(b => b.style.removeProperty('display'));
         });
     }
 
-    // Initialize
-    const saved = JSON.parse(localStorage.getItem('mondrian_final') || '[]');
-    saved.forEach(s => createTile(s.url, s.span, s.color));
-    new Sortable(grid, { animation: 200, onEnd: save });
+    document.getElementById('smart-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleInput(); });
+    const saved = JSON.parse(localStorage.getItem('mondrian_batch_v1') || '[]');
+    saved.forEach(s => createTile(s.url, s.span, s.color, s.text));
+    new Sortable(grid, { animation: 250, onEnd: save, filter: '.btn-remove' });
 </script>
 
 </body>
