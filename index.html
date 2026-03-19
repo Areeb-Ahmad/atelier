@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mondrian Studio | High-Performance</title>
+    <title>Mondrian Studio | Nitro-Load</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -39,7 +39,7 @@
         .grid-item-wrapper {
             position: relative;
             background: var(--m-white);
-            padding: 8px; /* The White Border */
+            padding: 8px; /* The Mondrian White Frame */
             overflow: hidden;
             display: flex;
             align-items: center; justify-content: center;
@@ -47,7 +47,25 @@
             cursor: pointer;
         }
 
-        .grid-item { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+        /* Loading pulse effect for better perceived speed */
+        .is-loading {
+            background: #eee;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        .grid-item { 
+            width: 100%; height: 100%; 
+            object-fit: cover; 
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease-in;
+        }
         
         .grid-text { 
             color: #000; font-weight: 800; text-transform: uppercase; 
@@ -100,6 +118,7 @@
     <div class="container d-flex justify-content-between align-items-center">
         <span style="font-weight: 900; letter-spacing: 4px;">STUDIO</span>
         <div class="d-flex gap-2">
+            <button class="btn-ui" onclick="shuffleGrid()" style="border-color: var(--m-yellow);">Shuffle</button>
             <button class="btn-ui" onclick="toggleModal(true)">Batch Upload</button>
             <button class="btn-ui" style="border-color: var(--m-red);" onclick="clearGrid()">Reset</button>
             <button class="btn-ui" style="background: white; color: black;" onclick="exportImage()">Export PNG</button>
@@ -118,12 +137,12 @@
 
 <div id="upload-modal" class="m-modal">
     <div class="m-modal-content">
-        <h2 style="font-weight: 900; text-transform: uppercase;">Turbo Import</h2>
+        <h2 style="font-weight: 900; text-transform: uppercase;">Nitro Batch Import</h2>
         <hr style="border-top: 5px solid black; opacity: 1;">
-        <p style="font-size: 13px;">Upload a <code>.txt</code> file with one URL per line. Parallel loading enabled.</p>
+        <p style="font-size: 13px;">Images are pre-fetched into memory for instant rendering.</p>
         <input type="file" id="file-input" accept=".txt" class="form-control mb-3" style="background: #eee; color: #000; border: 2px solid #000;">
         <div class="d-flex gap-2">
-            <button class="btn btn-dark flex-grow-1 rounded-0 fw-bold" id="process-btn" onclick="processFile()">START LOADING</button>
+            <button class="btn btn-dark flex-grow-1 rounded-0 fw-bold" id="process-btn" onclick="processFile()">START NITRO LOAD</button>
             <button class="btn btn-outline-dark rounded-0" onclick="toggleModal(false)">CANCEL</button>
         </div>
     </div>
@@ -138,78 +157,89 @@
         document.getElementById('upload-modal').style.display = show ? 'flex' : 'none';
     }
 
-    // Single item logic
+    // Nitro Fetch: Grabs raw data to bypass browser image "waiting"
+    async function nitroFetch(url) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+            const response = await fetch(url, { mode: 'cors', signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (!response.ok) throw new Error();
+            const blob = await response.blob();
+            return URL.createObjectURL(blob);
+        } catch (e) {
+            return url; // Fallback to normal URL if CORS is blocked
+        }
+    }
+
+    function shuffleGrid() {
+        const tiles = Array.from(grid.children);
+        for (let i = tiles.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            grid.appendChild(tiles[j]);
+        }
+        save();
+    }
+
     async function handleSingleInput() {
         const val = document.getElementById('smart-input').value.trim();
         if (!val) return;
-        const res = await resolveItem(val);
-        const tile = createTileElement(res.url, res.span, res.color, res.text);
+        const isUrl = val.startsWith('http');
+        const tile = createTileElement(isUrl ? 'loading' : null, '', null, isUrl ? null : val);
         grid.appendChild(tile);
+        
+        if (isUrl) {
+            const nitroUrl = await nitroFetch(val);
+            const img = tile.querySelector('img');
+            if (img) img.src = nitroUrl;
+        }
+
         document.getElementById('smart-input').value = '';
         save();
     }
 
-    // The Performance Core: Parallel Processing
-    async function processFile() {
+    function processFile() {
         const fileInput = document.getElementById('file-input');
-        const btn = document.getElementById('process-btn');
         const file = fileInput.files[0];
         if (!file) return;
-
-        btn.innerText = "LOADING...";
-        btn.disabled = true;
 
         const reader = new FileReader();
         reader.onload = async (e) => {
             const lines = e.target.result.split(/\r?\n/).map(l => l.trim()).filter(l => l !== "");
-            
-            // Start ALL loads at once
-            const promises = lines.map(line => resolveItem(line));
-            const results = await Promise.all(promises);
+            toggleModal(false);
 
-            // Batch update the DOM
             const fragment = document.createDocumentFragment();
-            results.forEach(res => {
-                fragment.appendChild(createTileElement(res.url, res.span, res.color, res.text));
+            const taskQueue = [];
+
+            // 1. Instant UI: Create all boxes as placeholders immediately
+            lines.forEach(line => {
+                const isUrl = line.startsWith('http');
+                const tile = createTileElement(
+                    isUrl ? 'loading' : null, 
+                    '', 
+                    isUrl ? null : colors[Math.floor(Math.random() * colors.length)], 
+                    isUrl ? null : line
+                );
+                fragment.appendChild(tile);
+                if (isUrl) taskQueue.push({ url: line, tile });
             });
 
             grid.appendChild(fragment);
+
+            // 2. Parallel Background Fetching
+            taskQueue.forEach(async (task) => {
+                const nitroUrl = await nitroFetch(task.url);
+                const img = task.tile.querySelector('img');
+                if (img) {
+                    img.src = nitroUrl;
+                    task.tile.classList.remove('is-loading');
+                }
+            });
+
             save();
-            
-            // Reset UI
-            btn.innerText = "START LOADING";
-            btn.disabled = false;
-            toggleModal(false);
             fileInput.value = '';
         };
         reader.readAsText(file);
-    }
-
-    // Shared logic to determine if input is Image or Text
-    function resolveItem(val) {
-        return new Promise((resolve) => {
-            if (val.startsWith('http')) {
-                const img = new Image();
-                img.crossOrigin = "anonymous";
-                img.src = val;
-                img.onload = () => {
-                    const ratio = img.width / img.height;
-                    const span = ratio > 1.2 ? 'span-wide' : (ratio < 0.8 ? 'span-tall' : '');
-                    resolve({ url: val, span, color: null, text: null });
-                };
-                img.onerror = () => {
-                    resolve(makeTextData(val));
-                };
-            } else {
-                resolve(makeTextData(val));
-            }
-        });
-    }
-
-    function makeTextData(text) {
-        const span = text.length > 80 ? 'span-large' : (text.length > 30 ? 'span-wide' : '');
-        const color = Math.random() > 0.4 ? colors[Math.floor(Math.random() * colors.length)] : null;
-        return { url: null, span, color, text };
     }
 
     function createTileElement(url, span, color, text) {
@@ -217,14 +247,21 @@
         wrapper.className = `grid-item-wrapper ${span} ${color || ''}`;
         
         if (url) {
+            if (url === 'loading') wrapper.classList.add('is-loading');
             const img = document.createElement('img');
-            img.src = url; img.className = 'grid-item';
+            img.className = 'grid-item';
+            if (url !== 'loading') img.src = url;
+
+            img.onload = () => {
+                img.style.opacity = "1";
+                if (img.width / img.height > 1.2) wrapper.classList.add('span-wide');
+                if (img.width / img.height < 0.8) wrapper.classList.add('span-tall');
+            };
             wrapper.appendChild(img);
         } else if (text) {
             const p = document.createElement('p');
             p.className = 'grid-text';
             p.innerText = text;
-            p.style.fontSize = text.length > 60 ? '0.8rem' : (text.length > 20 ? '1.1rem' : '1.4rem');
             wrapper.appendChild(p);
         }
 
@@ -252,27 +289,27 @@
             span: Array.from(w.classList).find(c => c.startsWith('span-')) || '',
             color: Array.from(w.classList).find(c => c.startsWith('block-')) || ''
         }));
-        localStorage.setItem('mondrian_turbo_v1', JSON.stringify(data));
+        localStorage.setItem('mondrian_nitro_v1', JSON.stringify(data));
     }
 
     function clearGrid() {
-        if(confirm("Wipe canvas?")) { grid.innerHTML = ''; localStorage.removeItem('mondrian_turbo_v1'); }
+        if(confirm("Wipe everything?")) { grid.innerHTML = ''; localStorage.removeItem('mondrian_nitro_v1'); }
     }
 
     function exportImage() {
         const btns = document.querySelectorAll('.btn-remove');
         btns.forEach(b => b.style.display = 'none');
         html2canvas(grid, { useCORS: true, scale: 2, backgroundColor: '#111' }).then(canvas => {
-            const a = document.createElement('a');
-            a.download = `composition-${Date.now()}.png`;
-            a.href = canvas.toDataURL();
-            a.click();
+            const link = document.createElement('a');
+            link.download = `composition-${Date.now()}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
             btns.forEach(b => b.style.removeProperty('display'));
         });
     }
 
-    // Initialization
-    const saved = JSON.parse(localStorage.getItem('mondrian_turbo_v1') || '[]');
+    // Init logic
+    const saved = JSON.parse(localStorage.getItem('mondrian_nitro_v1') || '[]');
     saved.forEach(s => grid.appendChild(createTileElement(s.url, s.span, s.color, s.text)));
     new Sortable(grid, { animation: 250, onEnd: save, filter: '.btn-remove' });
 </script>
