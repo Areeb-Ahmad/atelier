@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mondrian Studio | Batch Edition</title>
+    <title>Mondrian Studio | High-Performance</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -28,7 +28,7 @@
             grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
             grid-auto-rows: 160px;
             grid-auto-flow: dense;
-            gap: 12px; 
+            gap: 12px;
             background: var(--m-black);
             padding: 12px;
             border: 12px solid var(--m-black);
@@ -39,15 +39,21 @@
         .grid-item-wrapper {
             position: relative;
             background: var(--m-white);
+            padding: 8px; /* The White Border */
             overflow: hidden;
             display: flex;
             align-items: center; justify-content: center;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            cursor: pointer; padding: 15px; text-align: center;
+            transition: transform 0.2s;
+            cursor: pointer;
         }
 
         .grid-item { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
-        .grid-text { color: #000; font-weight: 800; text-transform: uppercase; line-height: 1.1; word-wrap: break-word; margin: 0; width: 100%; }
+        
+        .grid-text { 
+            color: #000; font-weight: 800; text-transform: uppercase; 
+            line-height: 1.1; word-wrap: break-word; margin: 0; width: 100%; 
+            padding: 10px;
+        }
 
         .block-red { background: var(--m-red); }
         .block-red .grid-text { color: white; }
@@ -67,13 +73,12 @@
         .btn-ui:hover { background: white; color: black; border-color: white; }
 
         .btn-remove {
-            position: absolute; top: 0; right: 0; padding: 6px 10px;
-            background: black; color: white; border: none; font-size: 10px;
+            position: absolute; top: 2px; right: 2px; padding: 4px 8px;
+            background: rgba(0,0,0,0.8); color: white; border: none; font-size: 9px;
             display: none; cursor: pointer; z-index: 20;
         }
         .grid-item-wrapper:hover .btn-remove { display: block; }
 
-        /* Modal / Overlay */
         .m-modal {
             display: none; position: fixed; z-index: 1000; left: 0; top: 0;
             width: 100%; height: 100%; background: rgba(0,0,0,0.9);
@@ -95,7 +100,7 @@
     <div class="container d-flex justify-content-between align-items-center">
         <span style="font-weight: 900; letter-spacing: 4px;">STUDIO</span>
         <div class="d-flex gap-2">
-            <button class="btn-ui" onclick="document.getElementById('upload-modal').style.display='flex'">Batch Upload</button>
+            <button class="btn-ui" onclick="toggleModal(true)">Batch Upload</button>
             <button class="btn-ui" style="border-color: var(--m-red);" onclick="clearGrid()">Reset</button>
             <button class="btn-ui" style="background: white; color: black;" onclick="exportImage()">Export PNG</button>
         </div>
@@ -105,29 +110,21 @@
 <div class="container control-panel">
     <div class="input-group shadow-lg">
         <input type="text" class="form-control" id="smart-input" placeholder="Paste link OR type text...">
-        <button class="btn btn-light px-4 fw-bold" onclick="handleInput()">ADD</button>
+        <button class="btn btn-light px-4 fw-bold" onclick="handleSingleInput()">ADD</button>
     </div>
 </div>
 
-<div id="capture-area">
-    <div id="collage-grid"></div>
-</div>
+<div id="collage-grid"></div>
 
 <div id="upload-modal" class="m-modal">
     <div class="m-modal-content">
-        <h2 style="font-weight: 900; text-transform: uppercase;">Batch Import</h2>
+        <h2 style="font-weight: 900; text-transform: uppercase;">Turbo Import</h2>
         <hr style="border-top: 5px solid black; opacity: 1;">
-        <p style="font-size: 13px;"><strong>Format Instructions:</strong></p>
-        <ul style="font-size: 12px; padding-left: 20px;">
-            <li>Create a <code>.txt</code> file.</li>
-            <li>Paste one image URL per line.</li>
-            <li>Direct links (ending in .jpg, .png, etc.) work best.</li>
-            <li>Empty lines will be ignored.</li>
-        </ul>
+        <p style="font-size: 13px;">Upload a <code>.txt</code> file with one URL per line. Parallel loading enabled.</p>
         <input type="file" id="file-input" accept=".txt" class="form-control mb-3" style="background: #eee; color: #000; border: 2px solid #000;">
         <div class="d-flex gap-2">
-            <button class="btn btn-dark flex-grow-1 rounded-0 fw-bold" onclick="processFile()">PROCESS FILE</button>
-            <button class="btn btn-outline-dark rounded-0" onclick="document.getElementById('upload-modal').style.display='none'">CANCEL</button>
+            <button class="btn btn-dark flex-grow-1 rounded-0 fw-bold" id="process-btn" onclick="processFile()">START LOADING</button>
+            <button class="btn btn-outline-dark rounded-0" onclick="toggleModal(false)">CANCEL</button>
         </div>
     </div>
 </div>
@@ -137,61 +134,88 @@
     const spanCycle = ['', 'span-wide', 'span-tall', 'span-large'];
     const colors = ['block-red', 'block-blue', 'block-yellow'];
 
-    function handleInput() {
+    function toggleModal(show) {
+        document.getElementById('upload-modal').style.display = show ? 'flex' : 'none';
+    }
+
+    // Single item logic
+    async function handleSingleInput() {
         const val = document.getElementById('smart-input').value.trim();
         if (!val) return;
-        processItem(val);
+        const res = await resolveItem(val);
+        const tile = createTileElement(res.url, res.span, res.color, res.text);
+        grid.appendChild(tile);
         document.getElementById('smart-input').value = '';
+        save();
     }
 
-    // New shared logic for single and batch items
-    function processItem(val) {
-        if (val.startsWith('http')) {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.src = val;
-            img.onload = () => {
-                const ratio = img.width / img.height;
-                let span = ratio > 1.2 ? 'span-wide' : (ratio < 0.8 ? 'span-tall' : '');
-                createTile(val, span, null, null);
-                save();
-            };
-            img.onerror = () => {
-                addTextTile(val);
-                save();
-            };
-        } else {
-            addTextTile(val);
-            save();
-        }
-    }
-
-    function processFile() {
+    // The Performance Core: Parallel Processing
+    async function processFile() {
         const fileInput = document.getElementById('file-input');
+        const btn = document.getElementById('process-btn');
         const file = fileInput.files[0];
-        if (!file) return alert("Select a file first.");
+        if (!file) return;
+
+        btn.innerText = "LOADING...";
+        btn.disabled = true;
 
         const reader = new FileReader();
-        reader.onload = (e) => {
-            const lines = e.target.result.split(/\r?\n/);
-            lines.forEach(line => {
-                if (line.trim()) processItem(line.trim());
+        reader.onload = async (e) => {
+            const lines = e.target.result.split(/\r?\n/).map(l => l.trim()).filter(l => l !== "");
+            
+            // Start ALL loads at once
+            const promises = lines.map(line => resolveItem(line));
+            const results = await Promise.all(promises);
+
+            // Batch update the DOM
+            const fragment = document.createDocumentFragment();
+            results.forEach(res => {
+                fragment.appendChild(createTileElement(res.url, res.span, res.color, res.text));
             });
-            document.getElementById('upload-modal').style.display = 'none';
-            fileInput.value = ''; // Reset input
+
+            grid.appendChild(fragment);
+            save();
+            
+            // Reset UI
+            btn.innerText = "START LOADING";
+            btn.disabled = false;
+            toggleModal(false);
+            fileInput.value = '';
         };
         reader.readAsText(file);
     }
 
-    function addTextTile(text) {
-        let span = text.length > 80 ? 'span-large' : (text.length > 30 ? 'span-wide' : '');
-        const color = Math.random() > 0.4 ? colors[Math.floor(Math.random() * colors.length)] : null;
-        createTile(null, span, color, text);
+    // Shared logic to determine if input is Image or Text
+    function resolveItem(val) {
+        return new Promise((resolve) => {
+            if (val.startsWith('http')) {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.src = val;
+                img.onload = () => {
+                    const ratio = img.width / img.height;
+                    const span = ratio > 1.2 ? 'span-wide' : (ratio < 0.8 ? 'span-tall' : '');
+                    resolve({ url: val, span, color: null, text: null });
+                };
+                img.onerror = () => {
+                    resolve(makeTextData(val));
+                };
+            } else {
+                resolve(makeTextData(val));
+            }
+        });
     }
 
-    function createTile(url, span, color, text) {
+    function makeTextData(text) {
+        const span = text.length > 80 ? 'span-large' : (text.length > 30 ? 'span-wide' : '');
+        const color = Math.random() > 0.4 ? colors[Math.floor(Math.random() * colors.length)] : null;
+        return { url: null, span, color, text };
+    }
+
+    function createTileElement(url, span, color, text) {
         const wrapper = document.createElement('div');
         wrapper.className = `grid-item-wrapper ${span} ${color || ''}`;
+        
         if (url) {
             const img = document.createElement('img');
             img.src = url; img.className = 'grid-item';
@@ -203,6 +227,7 @@
             p.style.fontSize = text.length > 60 ? '0.8rem' : (text.length > 20 ? '1.1rem' : '1.4rem');
             wrapper.appendChild(p);
         }
+
         wrapper.onclick = (e) => {
             if (e.target.tagName === 'BUTTON') return;
             let current = spanCycle.find(s => s && wrapper.classList.contains(s)) || '';
@@ -211,11 +236,13 @@
             if (spanCycle[next]) wrapper.classList.add(spanCycle[next]);
             save();
         };
+
         const rm = document.createElement('button');
         rm.innerText = "✕"; rm.className = "btn-remove";
         rm.onclick = (e) => { e.stopPropagation(); wrapper.remove(); save(); };
         wrapper.appendChild(rm);
-        grid.appendChild(wrapper);
+        
+        return wrapper;
     }
 
     function save() {
@@ -225,11 +252,11 @@
             span: Array.from(w.classList).find(c => c.startsWith('span-')) || '',
             color: Array.from(w.classList).find(c => c.startsWith('block-')) || ''
         }));
-        localStorage.setItem('mondrian_batch_v1', JSON.stringify(data));
+        localStorage.setItem('mondrian_turbo_v1', JSON.stringify(data));
     }
 
     function clearGrid() {
-        if(confirm("Wipe canvas?")) { grid.innerHTML = ''; localStorage.removeItem('mondrian_batch_v1'); }
+        if(confirm("Wipe canvas?")) { grid.innerHTML = ''; localStorage.removeItem('mondrian_turbo_v1'); }
     }
 
     function exportImage() {
@@ -244,9 +271,9 @@
         });
     }
 
-    document.getElementById('smart-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') handleInput(); });
-    const saved = JSON.parse(localStorage.getItem('mondrian_batch_v1') || '[]');
-    saved.forEach(s => createTile(s.url, s.span, s.color, s.text));
+    // Initialization
+    const saved = JSON.parse(localStorage.getItem('mondrian_turbo_v1') || '[]');
+    saved.forEach(s => grid.appendChild(createTileElement(s.url, s.span, s.color, s.text)));
     new Sortable(grid, { animation: 250, onEnd: save, filter: '.btn-remove' });
 </script>
 
